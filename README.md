@@ -5,7 +5,7 @@ Claude made me this to be used for my idle/incremental game.
 Number representation logic follows games like: Cat Snack Bar and Idle Cat Gunner.
 Can save you a couple thousand tokens.
 
-Especially useful for idle games, incremental games, and any system where numbers keep climbing past `1.8e308`.
+Useful for any system where numbers keep climbing past `1.8e308`.
 
 ---
 
