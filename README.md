@@ -16,7 +16,8 @@ Ships with an optional Newtonsoft.Json converter for config/save serialization.
 
 ------
 
-How the math works
+**How the math works:**
+
 There are two separate pieces here: how the number is stored, and how it's displayed.
 
 1. Storage: scientific notation with a long exponent
