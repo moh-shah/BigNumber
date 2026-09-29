@@ -3,6 +3,7 @@ A dependency-free C# struct for idle/incremental games
 
 Claude made me this to be used for my idle/incremental game.
 Number representation logic follows games like: Cat Snack Bar and Idle Cat Gunner.
+
 Can save you a couple thousand tokens.
 
 Useful for any system where numbers keep climbing past `1.8e308`.
