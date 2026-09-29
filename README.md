@@ -1,82 +1,265 @@
 # BigNumber
-BigNumber — A dependency-free C# struct for idle/incremental games
+A dependency-free C# struct for idle/incremental games
 
-Clade made me this to be used for my idle/incremental game. Number representation logic follows games like: Cat Snack Bar and Idle Cat Gunner.
+Clade made me this to be used for my idle/incremental game.
+Number representation logic follows games like: Cat Snack Bar and Idle Cat Gunner.
 Can save you a couple thousand tokens.
 
-------
+Especially useful for idle games, incremental games, and any system where numbers keep climbing past `1.8e308`.
 
-BigNumber — A dependency-free C# struct for idle/incremental games where numbers outgrow double (past ~1.8e308).
-Stores values as mantissa × 10^exponent with a long exponent, so it scales indefinitely.
-Formats/parses using a letter-tier suffix (bijective base-26, like Excel columns):
-1000 → "1A", 1e6 → "1B", 1e9 → "1C", continuing past "ZZ" into "AAA" and beyond with no special-casing.
-Supports full arithmetic (+ - * / Pow) and comparisons.
-Ships with an optional Newtonsoft.Json converter for config/save serialization.
+---
 
+## Why BigNumber?
 
-------
+A normal `double` has a limited exponent range. Once values become too large, it stops being meaningful and becomes `Infinity`.
 
-**How the math works:**
+BigNumber avoids that by storing:
 
-There are two separate pieces here: how the number is stored, and how it's displayed.
+- a mantissa
+- a large exponent
 
-1. Storage: scientific notation with a long exponent
-A double can't represent idle-game-scale numbers because its own internal exponent only has ~11 bits — it maxes out around 1.8 × 10^308. Past that it just becomes Infinity.
+In other words, it stores values as:
 
-So instead of storing one double, BigNumber stores two numbers:
+`value = mantissa × 10^exponent`
 
-value = Mantissa × 10^Exponent
-Mantissa is a double, always kept in the range [1, 10) (or exactly 0).
-Exponent is a long, which can go up to ~9.2 × 10^18 — astronomically more headroom than a double's exponent ever had.
-Example: 2500 is stored as Mantissa = 2.5, Exponent = 3 (since 2.5 × 10^3 = 2500). A number like 10^500 is just Mantissa = 1, Exponent = 500 — completely unremarkable to store, even though it'd overflow a double instantly.
+where:
 
-Normalize is the function that keeps this invariant true after every operation. If a calculation produces a mantissa like 25.0 or 0.003, Normalize walks it back into [1, 10) by shifting digits into the exponent:
+- mantissa is a `double` kept in the range `[1, 10)` or exactly `0`
+- exponent is a `long`, giving enormous headroom
 
-25.0 × 10^3  →  2.5 × 10^4      (shifted right: divide mantissa by 10, exponent+1)
-0.003 × 10^3 →  3.0 × 10^0      (shifted left: multiply mantissa by 10, exponent-1)
-2. Arithmetic
-Multiply / Divide are easy: multiply/divide the mantissas, and just add or subtract the exponents. That's the whole point of scientific notation — (a×10^m) × (b×10^n) = (a×b)×10^(m+n).
+Example:
 
-Add / Subtract are the tricky ones, because you can't add two numbers in scientific notation unless their exponents match. So the code:
+- `2500` → mantissa = `2.5`, exponent = `3`
+- `10^500` → mantissa = `1`, exponent = `500`
 
-Picks whichever number has the bigger exponent.
-Shifts the smaller one's mantissa right by the exponent difference (dividing it by 10^diff) so both are expressed at the same scale.
-Adds the mantissas normally, then re-normalizes.
-Example: 2.5×10^5 + 3×10^3 → shift the second one: 3×10^3 = 0.03×10^5 → add: (2.5+0.03)×10^5 = 2.53×10^5.
+This is effectively scientific notation, but with a much larger exponent range than a standard `double` can provide.
 
-One shortcut: if the exponents differ by more than ~17, the smaller number is thrown away entirely (if (diff > 17) return a;). That's because a double only has about 15–17 significant decimal digits — adding something 10^17 times smaller literally wouldn't change any bit of the result, so there's no point doing the work. This is standard in every idle-game big-number library.
+---
 
-Comparison just compares sign first, then exponent, then mantissa — exactly like comparing two numbers written in scientific notation by eye: whichever has the bigger exponent is bigger, and only if exponents tie do you look at the mantissa.
+## Features
 
-3. Display: the letter suffix
-This is a completely separate step from the math above — it only matters when converting to a string.
+- dependency-free C# struct
+- supports large numbers past `double` limits
+- arithmetic:
+  - addition
+  - subtraction
+  - multiplication
+  - division
+  - power
+- comparisons
+- human-readable suffix formatting
+- optional `Newtonsoft.Json` converter for save/config serialization
 
-Since every 3 decimal digits is a "tier" (10^3 = one tier), the tier number is just:
+---
 
-tier = Exponent / 3   (integer division)
-Exponent = 3 → tier 1 → "A". Exponent = 6 → tier 2 → "B". Exponent = 9 → tier 3 → "C".
+## How the math works
 
-Then the leftover Exponent % 3 (0, 1, or 2) tells you how much to shift the mantissa within that tier so it displays as a number between 1 and 999 instead of 1 and 10. E.g. 2000 has Exponent = 3, Mantissa = 2; tier = 1 ("A"), remainder = 0, so it displays as 2 + "A" = "2A".
+There are two separate pieces to understand:
 
-4. Turning a tier number into letters (and back)
-This is the part people usually haven't seen before: turning 1 → A, 26 → Z, 27 → AA, 702 → ZZ is bijective base-26 — the exact algorithm Excel uses to name columns.
+1. storage
+2. display
 
-It's not regular base-26, because regular base-26 would have no digit for "zero" in each position and couldn't distinguish A from AA cleanly. The trick is: before taking the remainder, you subtract 1 first:
+### 1) Storage: scientific notation with a long exponent
 
-ToLetters(n):
-    while n > 0:
-        n = n - 1                  ← the "bijective" trick
-        letter = 'A' + (n % 26)
-        prepend letter
-        n = n / 26                 (integer division)
-Walking through tier = 27:
+A `double` cannot represent idle-game-scale numbers because its exponent range is too small. Past roughly `1.8 × 10^308`, it eventually becomes `Infinity`.
 
-n=27 → n-1=26 → 26 % 26 = 0 → 'A'. n = 26 / 26 = 1.
-n=1 → n-1=0 → 0 % 26 = 0 → 'A'. n = 0. Stop.
-Result, read in the order we produced it (prepending each time): "AA".
-And tier = 702:
+BigNumber stores values as:
 
-n=702 → 701 % 26 = 25 → 'Z'. n = 701/26 = 26.
-n=26 → 25 % 26 = 25 → 'Z'. n = 0. Stop.
-Result: "ZZ".
-That -1 before the modulo is what makes 26 letters cycle cleanly through unlimited digit-groups without ever needing a "zero" letter — it's why the scheme naturally keeps extending to "AAA" after "ZZ" with the exact same loop, no special-casing required. Parsing (TryFromLetters) just runs that in reverse: tier = tier×26 + (letter - 'A' + 1) for each character, left to right.
+`Mantissa × 10^Exponent`
+
+This keeps the number manageable even when it is astronomically large.
+
+The internal normalization process ensures the mantissa always stays in a valid range:
+
+- `1 <= mantissa < 10`
+- or `mantissa == 0`
+
+This is done with normalization rules like:
+
+- `25.0 × 10^3` → `2.5 × 10^4`
+- `0.003 × 10^3` → `3.0 × 10^0`
+
+### 2) Arithmetic
+
+#### Multiplication / Division
+
+These are straightforward:
+
+- multiply/divide mantissas
+- add/subtract exponents
+
+For example:
+
+`(a × 10^m) × (b × 10^n) = (a × b) × 10^(m+n)`
+
+#### Addition / Subtraction
+
+These are trickier because numbers must share the same exponent before they can be added.
+
+BigNumber does this by:
+
+- selecting the larger exponent
+- shifting the smaller mantissa to match scale
+- adding the mantissas
+- renormalizing afterward
+
+Example:
+
+`2.5 × 10^5 + 3 × 10^3`
+
+becomes:
+
+`2.5 × 10^5 + 0.03 × 10^5`
+
+then:
+
+`(2.5 + 0.03) × 10^5 = 2.53 × 10^5`
+
+A small optimization is used when exponents differ by more than about `17`: the smaller value is effectively ignored because `double` precision only has roughly `15–17` significant decimal digits.
+
+#### Comparison
+
+Comparison is done by checking:
+
+1. sign
+2. exponent
+3. mantissa
+
+This matches normal scientific notation reasoning:
+
+- larger exponent means larger number
+- if exponents are equal, compare mantissas
+
+---
+
+## Display: letter-tier suffixes
+
+This is a separate concern from the math itself.
+
+The system groups values into 3-digit tiers:
+
+- `10^3` → one tier
+- `10^6` → two tiers
+- `10^9` → three tiers
+
+A value is displayed using a suffix pattern based on its exponent.
+
+For example:
+
+- `1000` → `1A`
+- `1e6` → `1B`
+- `1e9` → `1C`
+
+The suffix system continues past `ZZ` to `AAA`, `AAB`, and so on.
+
+This is not a standard base-10 suffix system. Instead, it uses a bijective base-26 naming system, similar to how Excel column names work.
+
+---
+
+## How the letter suffixes work
+
+The tier number is derived from the exponent:
+
+`tier = Exponent / 3`
+
+This tells you which letter group you are in.
+
+Examples:
+
+- exponent `3` → tier `1` → `A`
+- exponent `6` → tier `2` → `B`
+- exponent `9` → tier `3` → `C`
+
+The remainder:
+
+`Exponent % 3`
+
+determines the exact placement inside that tier.
+
+This is what allows values like:
+
+- `1,000` → `1A`
+- `1,000,000` → `1B`
+- `1,000,000,000` → `1C`
+
+to be displayed cleanly and consistently.
+
+---
+
+## Bijective base-26 (Excel-style lettering)
+
+The letter naming scheme is the same idea used by Excel column labels:
+
+- `1` → `A`
+- `26` → `Z`
+- `27` → `AA`
+- `702` → `ZZ`
+
+This is not a normal base-26 system. It uses a bijective approach so there is no special zero digit, which allows names to continue naturally:
+
+- `A`
+- `B`
+- ...
+- `Z`
+- `AA`
+- `AB`
+- ...
+- `ZZ`
+- `AAA`
+- `AAB`
+
+The core algorithm is:
+
+```csharp
+while (n > 0)
+{
+    n = n - 1;
+    letter = 'A' + (n % 26);
+    prepend letter;
+    n = n / 26;
+}
+```
+
+This offset by `-1` before modulo is the trick that makes the numbering system work cleanly without needing a "zero" symbol.
+
+---
+
+## Example
+
+```csharp
+BigNumber a = 2500;
+BigNumber b = 3e6;
+
+BigNumber sum = a + b;
+BigNumber product = a * b;
+BigNumber quotient = b / a;
+
+Console.WriteLine(sum);      // displays in suffix format
+Console.WriteLine(product);
+Console.WriteLine(quotient);
+```
+
+---
+
+## Notes
+
+BigNumber is designed for the kind of scale common in idle and incremental games:
+
+- values that eventually outgrow `double`
+- numbers that need readable shorthand
+- saves/configs that should still be easy to serialize
+
+The optional Newtonsoft converter makes it easy to store and restore values in save files.
+
+---
+
+## Summary
+
+BigNumber gives you:
+
+- unbounded-ish large-number storage
+- safe arithmetic on game-scale values
+- human-readable formatting
+- lightweight infrastructure with no external dependencies
+
+If you’re building an idle or incremental game and want a number type that keeps working far beyond the normal `double` limit, BigNumber is a practical fit.
